@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A cloud and a kitbashed citadel, lit live from the sky in the browser.">
+<title>Sky Render</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Oswald:wght@300;400&display=swap">
+<script type="importmap">{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<style>:root {
+  --bg: #000;
+  --glass: rgba(22, 26, 32, 0.78);
+  --line: rgba(255, 255, 255, 0.12);
+  --fg: #e4e8ec;
+  --muted: #8f99a5;
+  --accent: #f1b35a;
+  --accent-ink: #1d1407;
+  --bad: #ff8a7a;
+  --ar: 1.7778;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --bill: "Oswald", "Arial Narrow", "Roboto Condensed", sans-serif;   
+  --bill-ink: rgba(255, 248, 236, 0.88);
+  color-scheme: dark;
+}
+html, body { height: 100%; background: var(--bg); color: var(--fg); }
+body { margin: 0; overflow: hidden; font-family: var(--sans); font-size: 14px; line-height: 1.4; }
+.stage { position: fixed; inset: 0; display: grid; place-items: center; touch-action: none; cursor: grab; }
+.stage:active { cursor: grabbing; }
+canvas { position: absolute; display: block; }   
+#backdrop { left: 0; top: 0; width: 100%; height: 100%; }   
+#logo { pointer-events: none; }                               
+.overlay { position: absolute; inset: 0; display: grid; place-content: center; gap: 12px; padding: 24px; text-align: center;
+           background: var(--bg); }
+.overlay .msg { max-width: 52ch; color: var(--muted); }
+.overlay.err .msg { color: var(--bad); }
+.bar { width: min(320px, 70vw); height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; justify-self: center; }
+.bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.15s linear; }
+.ui { transition: opacity 0.4s ease; }           
+.foot {                                         
+  position: fixed; left: 0; right: 0; margin-inline: auto;   
+  bottom: max(5vh, 24px, env(safe-area-inset-bottom, 0px));
+  width: max-content; max-width: calc(100vw - 32px); display: flex; flex-direction: column; align-items: center;
+  gap: 14px; pointer-events: none;
+  opacity: 0; translate: 0 12px;                
+  transition: opacity 1.4s ease 0.35s, translate 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.35s;
+}
+body.ready .foot { opacity: 1; translate: none; }
+body.ready .foot > .ui { pointer-events: auto; }   
+.billing {
+  font-family: var(--bill); font-weight: 300; text-transform: uppercase; text-align: center; color: var(--bill-ink);
+  letter-spacing: 0.16em; line-height: 1.55; font-size: clamp(10px, 0.95vw, 14px);
+  display: grid; gap: 1px; text-wrap: balance;   
+}
+.billing .k { font-size: 0.7em; letter-spacing: 0.2em; opacity: 0.8; }   
+.billing .l2 { font-size: 0.78em; opacity: 0.82; }
+.billing .sep { display: inline-block; width: 1.6em; }
+.dock {                                         
+  display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: 100%;
+  font-family: var(--bill); font-weight: 300; text-transform: uppercase; letter-spacing: 0.2em; font-size: 12px;
+  color: var(--bill-ink);
+}
+.dock button { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; text-shadow: inherit;
+               background: none; border: 0; padding: 0; cursor: pointer; }
+.dock button:focus-visible, .dock input:focus-visible { outline: 1px solid #fff; outline-offset: 4px; }
+.skies { display: flex; gap: 14px; align-items: center; }
+.skies button { width: 22px; height: 22px; border-radius: 50%; border: 0;
+                box-shadow: inset 0 0 0 1.25px rgba(255, 255, 255, 0.75);
+                transition: box-shadow 0.2s ease, transform 0.2s ease; }
+.skies button:hover { box-shadow: inset 0 0 0 1.25px rgba(255, 255, 255, 0.95); }
+.skies button[aria-checked="true"] { box-shadow: inset 0 0 0 1.25px #fff; transform: scale(1.2); }
+.dock .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px 40px; }
+.quality { display: flex; align-items: center; gap: 14px; }   
+.seg { display: flex; gap: 18px; }
+.seg button { padding: 3px 0; opacity: 0.5; border-bottom: 1px solid transparent; min-width: 3.4em;
+              font-variant-numeric: tabular-nums; transition: opacity 0.2s ease; }
+.seg button:hover { opacity: 0.85; }
+.seg button[aria-checked="true"] { opacity: 1; border-bottom-color: currentColor; }
+.seg button:disabled { cursor: default; opacity: 0.25; }
+.exp { display: flex; align-items: center; gap: 14px; cursor: pointer; }
+.exp input { -webkit-appearance: none; appearance: none; width: 120px; height: 16px; margin: 0; background: transparent;
+             cursor: pointer; }
+.exp input::-webkit-slider-runnable-track { height: 1px; background: rgba(255, 255, 255, 0.6); }
+.exp input::-webkit-slider-thumb { -webkit-appearance: none; width: 9px; height: 9px; margin-top: -4px; border-radius: 50%;
+                                   background: #fff; box-shadow: none; }
+.exp input::-moz-range-track { height: 1px; background: rgba(255, 255, 255, 0.6); }
+.exp input::-moz-range-thumb { width: 9px; height: 9px; border: 0; border-radius: 50%; background: #fff; box-shadow: none; }
+.panel {
+  position: fixed; right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(max(14px, env(safe-area-inset-bottom, 0px)) + 130px);
+  width: min(340px, calc(100vw - 32px)); box-sizing: border-box; display: grid; gap: 10px;
+  padding: 14px; background: var(--glass); border: 1px solid var(--line); border-radius: 12px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-height: calc(100vh - 120px); overflow: auto;
+}
+dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: 0.82rem; }
+dt { color: var(--muted); }
+dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.note, .credits { margin: 0; color: var(--muted); font-size: 0.76rem; }
+.credits { display: grid; gap: 2px; }
+.dropping .stage { outline: 2px dashed var(--accent); outline-offset: -10px; }
+@media (prefers-reduced-motion: reduce) { .ui, .foot, .bar span { transition: none; } }
+</style>
+
+</head>
+<body>
+<main class="stage" id="stage">
+  <canvas id="backdrop" aria-hidden="true"></canvas>
+  <canvas id="view" width="1920" height="1080" aria-label="The scene, relit from the sky as you turn it"></canvas>
+  <div class="overlay" id="overlay"><div class="msg" id="msg">Starting</div><div class="bar"><span id="barfill"></span></div></div>
+  <canvas id="logo" hidden aria-label="Sky Render"></canvas>
+</main>
+<div class="foot">
+<div class="ui dock" id="dock">
+  <div class="skies" id="skies" role="radiogroup" aria-label="Sky"></div>
+  <div class="row">
+    <div class="quality"><span id="qlabel">Quality</span>
+      <div class="seg" role="radiogroup" aria-labelledby="qlabel">
+        <button type="button" role="radio" data-q="low" aria-checked="true">Low</button>
+        <button type="button" role="radio" data-q="med" aria-checked="false">Med</button>
+        <button type="button" role="radio" data-q="high" aria-checked="false">High</button>
+      </div>
+    </div>
+    <label class="exp" for="exp"><span>Exposure</span><input type="range" id="exp" min="-4" max="4" step="0.1" value="0"></label>
+  </div>
+</div>
+<div class="billing" aria-label="Credits">
+  <div>Cloud <span class="k">by</span> Walt Disney Animation Studios<span class="sep"></span>Kitbash <span class="k">by</span>
+    Alex Pi<span class="sep"></span>HDRI <span id="hdricredit"></span></div>
+  <div class="l2"><span class="k">sky</span> <span id="billsky"></span><span id="billfrom"> <span class="k">from</span>
+    <span id="billsrc"></span></span><span class="sep"></span><span class="k">cloud
+    data</span> CC BY-SA 3.0</div>
+</div>
+</div>
+<section class="ui panel" id="info" hidden aria-label="Numbers">
+  <dl>
+    <dt>Relight, GPU</dt><dd id="gpums">-</dd>
+    <dt>Relights a second</dt><dd id="fps">-</dd>
+    <dt>Benchmark</dt><dd id="bench">-</dd>
+    <dt>New sky ready in</dt><dd id="skyms">-</dd>
+    <dt>Quality</dt><dd id="qinfo">-</dd>
+    <dt>Downloaded</dt><dd id="dl">-</dd>
+    <dt>Unpacked</dt><dd id="unpack">-</dd>
+    <dt>Cones</dt><dd id="cones">-</dd>
+    <dt>GPU memory</dt><dd id="mem">-</dd>
+    <dt>GPU</dt><dd id="gpu">-</dd>
+    <dt>Sky</dt><dd id="skyname">-</dd>
+  </dl>
+  <div><button id="benchbtn" class="primary" type="button" disabled>Run benchmark</button></div>
+  <p class="note" id="caption">&nbsp;</p>
+  <p class="note">A relight sums every pixel's cones against the blurred sky. It runs only while the sky turns or
+    changes; the benchmark runs 60 in a row. "Relights a second" is capped by the screen's refresh rate. Drop an .exr
+    or .hdr anywhere to light the scene with it.</p>
+  <div class="credits" id="credits"></div>
+</section>
+
+<script type="module">
+const Zt=2048,Ge=`struct Params {
+w: u32, h: u32, npx: u32, skyOn: u32,
+skyW: u32, skyH: u32, preW: u32, preH: u32,
+m0: vec4f, m1: vec4f, m2: vec4f,
+right: vec4f, up: vec4f, fwd: vec4f,
+nl: f32, codes: f32, bgBlur: f32, pad1: f32,
+};
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(6) var<storage, read> sky: array<vec4f>;
+@group(0) @binding(7) var<storage, read> pre: array<vec4f>;
+const PI = 3.14159265;
+fn unpackRGB9E5(x: u32) -> vec3f {
+return vec3f(f32(x & 511u), f32((x >> 9u) & 511u), f32((x >> 18u) & 511u)) * exp2(f32(i32(x >> 27u) - 24));
+}
+fn dirToUV(r: vec3f) -> vec2f { return vec2f(atan2(r.x, -r.z) / (2.0 * PI) + 0.5, acos(clamp(r.y, -1.0, 1.0)) / PI); }
+fn uvToDir(uv: vec2f) -> vec3f {
+let th = uv.y * PI; let ph = (uv.x - 0.5) * 2.0 * PI;
+return vec3f(sin(th) * sin(ph), cos(th), -sin(th) * cos(ph));
+}
+fn texel(fromPre: bool, base: u32, W: i32, x: i32, y: i32) -> vec3f {
+let i = base + u32(y * W + x);
+if (fromPre) { return pre[i].rgb; }
+return sky[i].rgb;
+}
+fn bilin(fromPre: bool, base: u32, W: u32, H: u32, uv: vec2f) -> vec3f {
+let x = uv.x * f32(W) - 0.5; let y = uv.y * f32(H) - 0.5;
+let fx = floor(x); let fy = floor(y);
+let tx = x - fx; let ty = y - fy;
+let iw = i32(W); let ih = i32(H);
+let x0 = ((i32(fx) % iw) + iw) % iw; let x1 = (x0 + 1) % iw;
+let y0 = clamp(i32(fy), 0, ih - 1); let y1 = clamp(i32(fy) + 1, 0, ih - 1);
+let a = texel(fromPre, base, iw, x0, y0); let b = texel(fromPre, base, iw, x1, y0);
+let c = texel(fromPre, base, iw, x0, y1); let d = texel(fromPre, base, iw, x1, y1);
+return mix(mix(a, b, tx), mix(c, d, tx), ty);
+}
+fn sharpSky(uv: vec2f) -> vec3f { return bilin(false, 0u, prm.skyW, prm.skyH, uv); }
+fn level(l: f32, uv: vec2f) -> vec3f { return bilin(true, u32(l) * prm.preW * prm.preH, prm.preW, prm.preH, uv); }
+fn lobe(d: vec3f, f0: f32) -> vec3f {
+let r = vec3f(dot(prm.m0.xyz, d), dot(prm.m1.xyz, d), dot(prm.m2.xyz, d));
+let uv = dirToUV(r);
+if (f0 <= 0.0) { return sharpSky(uv); }
+if (f0 < 1.0) { return mix(sharpSky(uv), level(0.0, uv), f0); }
+let f = min(f0 - 1.0, prm.nl - 1.0);
+let l0 = floor(f);
+return mix(level(l0, uv), level(min(l0 + 1.0, prm.nl - 1.0), uv), f - l0);
+}
+fn camDir(px: vec2f) -> vec3f {
+let ndc = (px / vec2f(f32(prm.w), f32(prm.h)) * 2.0 - 1.0) * vec2f(prm.up.w, 1.0) * prm.right.w;
+return normalize(prm.right.xyz * ndc.x + prm.up.xyz * ndc.y + prm.fwd.xyz);
+}
+`,ot=Ge+`@group(0) @binding(1) var<storage, read> offs: array<u32>;
+@group(0) @binding(2) var<storage, read> trans: array<u32>;
+@group(0) @binding(3) var<storage, read> dirs: array<u32>;
+@group(0) @binding(4) var<storage, read> lights: array<u32>;
+@group(0) @binding(5) var<storage, read> widths: array<u32>;
+@group(0) @binding(8) var<storage, read_write> outc: array<vec4f>;
+@compute @workgroup_size(64)
+fn relight(@builtin(global_invocation_id) gid: vec3u) {
+let i = gid.x;
+if (i >= prm.npx) { return; }
+var c = vec3f(0.0);
+let a = offs[i]; let b = offs[i + 1u];
+for (var k = a; k < b; k++) {
+let dw = dirs[k];
+let uv = vec2f(f32(dw & 65535u), f32(dw >> 16u)) / 65535.0;
+let code = (widths[k >> 2u] >> ((k & 3u) * 8u)) & 255u;
+c += unpackRGB9E5(lights[k]) * lobe(uvToDir(uv), f32(code) / prm.codes * prm.nl);
+}
+let t = f32((trans[i >> 1u] >> ((i & 1u) * 16u)) & 65535u) / 65535.0;
+if (prm.skyOn != 0u && t > 0.0) { c += t * lobe(camDir(vec2f(f32(i % prm.w), f32(i / prm.w)) + 0.5), prm.bgBlur); }
+outc[i] = vec4f(c, 1.0 - t);
+}
+`,at=`struct PF { srcW: u32, srcH: u32, srcOff: u32, dstOff: u32, dstW: u32, dstH: u32, row0: u32, rows: u32,
+sigma: f32, p0: f32, p1: f32, p2: f32 };
+@group(0) @binding(0) var<uniform> pf: PF;
+@group(0) @binding(1) var<storage, read> src: array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> dst: array<vec4f>;
+const PI = 3.14159265;
+@compute @workgroup_size(16, 16)
+fn prefilter(@builtin(global_invocation_id) gid: vec3u) {
+let ox = gid.x; let oy = gid.y + pf.row0;
+if (ox >= pf.dstW || gid.y >= pf.rows || oy >= pf.dstH) { return; }
+let th0 = (f32(oy) + 0.5) / f32(pf.dstH) * PI;
+let ph0 = ((f32(ox) + 0.5) / f32(pf.dstW) - 0.5) * 2.0 * PI;
+let d0 = vec3f(sin(th0) * sin(ph0), cos(th0), -sin(th0) * cos(ph0));
+var win = 3.5 * pf.sigma;
+if (win > 0.5 * PI) { win = PI; }
+let is2 = 1.0 / (pf.sigma * pf.sigma);
+let wEdge = select(0.0, exp((cos(win) - 1.0) * is2), win < PI);
+let sx = i32(pf.srcW); let sy = i32(pf.srcH);
+let y0 = max(0, i32(floor((th0 - win) / PI * f32(sy))) - 1);
+let y1 = min(sy - 1, i32(floor((th0 + win) / PI * f32(sy))) + 1);
+var acc = vec3f(0.0); var wsum = 0.0;
+for (var y = y0; y <= y1; y++) {
+let th = (f32(y) + 0.5) / f32(sy) * PI; let st = sin(th); let ct = cos(th);
+var dph = PI;
+let den = st * sin(th0);
+if (den > 1e-6) { dph = acos(clamp((cos(win) - ct * cos(th0)) / den, -1.0, 1.0)); }
+let xs = i32(ceil(dph / (2.0 * PI) * f32(sx))) + 1;
+let xc = i32(floor((ph0 / (2.0 * PI) + 0.5) * f32(sx)));
+var xa = xc - xs; var xb = xc + xs;
+if (xs * 2 + 1 >= sx) { xa = 0; xb = sx - 1; }
+for (var x = xa; x <= xb; x++) {
+let xx = ((x % sx) + sx) % sx;
+let ph = ((f32(xx) + 0.5) / f32(sx) - 0.5) * 2.0 * PI;
+let d = vec3f(st * sin(ph), ct, -st * cos(ph));
+let wt = max(exp((dot(d, d0) - 1.0) * is2) - wEdge, 0.0) * st;
+acc += wt * src[pf.srcOff + u32(y * sx + xx)].rgb;
+wsum += wt;
+}
+}
+dst[pf.dstOff + oy * pf.dstW + ox] = vec4f(acc / max(wsum, 1e-30), 1.0);
+}
+`,Re=`fn pcg(v: u32) -> u32 {
+let s = v * 747796405u + 2891336453u;
+let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+return (w >> 22u) ^ w;
+}
+fn grain(p: vec2f) -> f32 {
+let q = vec2u(max(p, vec2f(0.0)));
+let a = f32(pcg(q.x + pcg(q.y)) >> 8u) / 16777216.0;
+let b = f32(pcg(q.x + pcg(q.y + 0x9E3779B9u)) >> 8u) / 16777216.0;
+return a + b - 1.0;
+}
+`,lt=Re+`struct Show { w: u32, h: u32, exposure: f32, grain: f32, ox: f32, oy: f32, p0: f32, p1: f32 };
+@group(0) @binding(0) var<uniform> sh: Show;
+@group(0) @binding(1) var<storage, read> lin: array<vec4f>;
+@vertex fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
+let p = vec2f(f32((vi << 1u) & 2u), f32(vi & 2u));
+return vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+let i = (sh.h - 1u - u32(pos.y)) * sh.w + u32(pos.x);
+var c = lin[i].rgb * sh.exposure;
+c = (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);
+let g = grain(pos.xy + vec2f(sh.ox, sh.oy)) * sh.grain / 255.0;
+return vec4f(pow(clamp(c, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)) + g, 1.0);
+}
+`,ct=`struct Show { w: u32, h: u32, exposure: f32, pad: f32 };
+@group(0) @binding(0) var<uniform> sh: Show;
+@group(0) @binding(1) var<storage, read> lin: array<vec4f>;
+@vertex fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
+let p = vec2f(f32((vi << 1u) & 2u), f32(vi & 2u));
+return vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+let v = lin[(sh.h - 1u - u32(pos.y)) * sh.w + u32(pos.x)];
+let a = clamp(v.a, 0.0, 1.0);
+if (a <= 0.0) { return vec4f(0.0); }
+var c = v.rgb / a * sh.exposure;
+c = (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);
+return vec4f(pow(clamp(c, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)) * a, a);
+}
+`,ut=Ge+Re+`struct Place { left: f32, top: f32, scale: f32, k: f32, exposure: f32, level: f32, enabled: f32, grain: f32 };
+@group(0) @binding(9) var<uniform> pl: Place;
+@vertex fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
+let p = vec2f(f32((vi << 1u) & 2u), f32(vi & 2u));
+return vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+if (pl.enabled == 0.0) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+let s = pos.xy * pl.k;
+let px = vec2f((s.x - pl.left) / pl.scale, f32(prm.h) - (s.y - pl.top) / pl.scale);
+var c = lobe(camDir(px), pl.level) * pl.exposure;
+c = (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);
+return vec4f(pow(clamp(c, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)) + grain(s) * pl.grain / 255.0, 1.0);
+}
+`;function ft(t,e){const r=t.length/e,n=new Uint8Array(t.length);for(let s=0;s<e;s++){const i=s*r;for(let o=0;o<r;o++)n[o*e+s]=t[i+o]}return n}function dt(t,e){const r=new Uint8Array(t.bytes);let n=0;for(const i of e)r.set(i,n),n+=i.length;const s={uint8:Uint8Array,uint16:Uint16Array,uint32:Uint32Array,float32:Float32Array}[t.dtype];return new s(r.buffer,0,t.count)}function ht(t){const e=new Uint32Array(t.length+1);for(let r=0;r<t.length;r++)e[r+1]=e[r]+t[r];return e}function pt(t,e){const r=new Float32Array(e*4);for(let n=0;n<e;n++)r[4*n]=t[3*n],r[4*n+1]=t[3*n+1],r[4*n+2]=t[3*n+2],r[4*n+3]=1;return r}function ae(t,e,r,n,s,i,o,l=null){const u=e*r,a=(1<<n)-1,c=new Float32Array(256);for(let d=1;d<256;d++)c[d]=2**(d-128)/a;for(let d=i;d<o;d++){let h=0,p=0,m=0,k=0;for(let P=0,x=d*e;P<e;P++,x++){h=h+t[x]&255,p=p+t[u+x]&255,m=m+t[2*u+x]&255,k=k+t[3*u+x]&255;const w=c[k],B=4*x;if(s[B]=h*w,s[B+1]=p*w,s[B+2]=m*w,s[B+3]=1,l){const U=(.2126*h+.7152*p+.0722*m)*w;U>l.l&&(l.l=U,l.i=x)}}}}function yt(t,e,r,n){const s=new Float32Array(e*r*4);return ae(t,e,r,n,s,0,r),s}function gt(t,e,r){const n=e>>1,s=r>>1,i=new Float32Array(n*s*4);for(let o=0;o<s;o++)for(let l=0;l<n;l++)for(let u=0;u<4;u++){const a=(2*o*e+2*l)*4+u,c=((2*o+1)*e+2*l)*4+u;i[(o*n+l)*4+u]=.25*(t[a]+t[a+4]+t[c]+t[c+4])}return{rgba:i,W:n,H:s}}function mt(t,e,r,n){const s=Math.floor(r/n)*n,i=Math.floor(e/n)*n,o=i/n,l=s/n,u=new Float32Array(o*l*4);for(let a=0;a<l;a++){const c=new Float64Array(o*3);let d=0;for(let h=0;h<n;h++){const p=a*n+h,m=Math.sin((p+.5)/s*Math.PI);d+=m*n;for(let k=0;k<i;k++){const P=(p*e+k)*4,x=(k/n|0)*3;c[x]+=t[P]*m,c[x+1]+=t[P+1]*m,c[x+2]+=t[P+2]*m}}for(let h=0;h<o;h++){const p=(a*o+h)*4;u[p]=c[3*h]/d,u[p+1]=c[3*h+1]/d,u[p+2]=c[3*h+2]/d,u[p+3]=1}}return{low:u,Wl:o,Hl:l}}function _e(t,e,r){for(;e>2048;)({rgba:t,W:e,H:r}=gt(t,e,r));const{low:n,Wl:s,Hl:i}=mt(t,e,r,Math.max(8,Math.round(e/128))),o=new Float32Array(e*r*4+s*i*4);return o.set(t),o.set(n,e*r*4),{data:o,rgba:t,W:e,H:r,Wl:s,Hl:i}}function We(t,e){const r=Math.cos(t),n=Math.sin(t),s=Math.cos(e),i=Math.sin(e),o=[[r,0,n],[i*n,s,-i*r],[-s*n,i,s*r]];return[[o[0][0],o[1][0],o[2][0]],[o[0][1],o[1][1],o[2][1]],[o[0][2],o[1][2],o[2][2]]]}function bt(t){const e=Math.hypot(t[0],t[2]);return e>1e-6?[-t[2]/e,0,t[0]/e]:[1,0,0]}function wt(t,e,r){if(!e)return t;const[n,s,i]=r,o=Math.cos(-e),l=Math.sin(-e),u=1-o;return[[o+n*n*u,n*s*u-i*l,n*i*u+s*l],[s*n*u+i*l,o+s*s*u,s*i*u-n*l],[i*n*u-s*l,i*s*u+n*l,o+i*i*u]].map(c=>[0,1,2].map(d=>c[0]*t[0][d]+c[1]*t[1][d]+c[2]*t[2][d]))}function Le(t,e,r){const n={l:-1,i:0};for(let s=0;s<e*r;s++){const i=.2126*t[4*s]+.7152*t[4*s+1]+.0722*t[4*s+2];i>n.l&&(n.l=i,n.i=s)}return n}function le(t,e,r){const n=Math.floor(t.i/e),s=t.i%e,i=(n+.5)/r*Math.PI,o=((s+.5)/e-.5)*2*Math.PI;return[Math.sin(i)*Math.sin(o),Math.cos(i),-Math.sin(i)*Math.cos(o)]}function xt(t,e,r,n){const[s,,i]=le(t,e,r);return Math.atan2(s,-i)-n*Math.PI/180}function vt(t,e,r,n){const s=le(t,e,r),i=Math.atan2(s[0],-s[2]);let o=-2,l=0;for(let u=0;u<7200;u++){const a=u/7200*2*Math.PI,c=We(a,0),d=c[0][0]*n[0]+c[0][1]*n[1]+c[0][2]*n[2],h=c[2][0]*n[0]+c[2][1]*n[1]+c[2][2]*n[2],p=Math.cos(Math.atan2(d,-h)-i);p>o&&(o=p,l=a)}return l}function en(t,e){let r=t*e;return r=r*(2.51*r+.03)/(r*(2.43*r+.59)+.14),Math.round(Math.pow(Math.min(Math.max(r,0),1),1/2.2)*255)}function T(t,e,r){const n=new Uint8Array(e.buffer,e.byteOffset,e.byteLength),s=t.createBuffer({size:Math.max(4,Math.ceil(n.length/4)*4),usage:r,mappedAtCreation:!0});return new Uint8Array(s.getMappedRange()).set(n),s.unmap(),s}async function tn(t,e,r){const n=t.createBuffer({size:r,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),s=t.createCommandEncoder();s.copyBufferToBuffer(e,0,n,0,r),t.queue.submit([s.finish()]),await n.mapAsync(GPUMapMode.READ);const i=n.getMappedRange().slice(0);return n.unmap(),i}class Te{constructor(e,r,n,s="main"){this.device=e,this.lay=r,this.npx=r.width*r.height,this.sets={},this.addCones(s,n),this.useCones(s),this.out=e.createBuffer({size:this.npx*16,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC}),this.preW=r.pre.width,this.preH=r.pre.height,this.nl=r.levels,this.pre=e.createBuffer({size:this.preW*this.preH*this.nl*16,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC}),this.params=e.createBuffer({size:144,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),this.pRelight=e.createComputePipeline({layout:"auto",compute:{module:e.createShaderModule({code:ot}),entryPoint:"relight"}}),this.pPre=e.createComputePipeline({layout:"auto",compute:{module:e.createShaderModule({code:at}),entryPoint:"prefilter"}}),this.sky=null,this.ownPre=!0,this.old=null,this.liftAxis=[1,0,0]}addCones(e,r){const n=GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST,s=this.device;this.sets[e]={offs:T(s,ht(r.count),n),trans:T(s,r.trans,n),dirs:T(s,r.dir,n),lights:T(s,r.light,n),widths:T(s,r.width,n)}}useSkyOf(e){this.ownPre&&(this.pre.destroy(),this.ownPre=!1),Object.assign(this,{sky:e.sky,pre:e.pre,skyW:e.skyW,skyH:e.skyH,liftAxis:e.liftAxis}),this.old=e.old?{...e.old,own:!1}:null,this.bindRelight(),this.bindOld()}useCones(e){Object.assign(this,this.sets[e]),this.shown=e,this.sky&&this.bindRelight(),this.old&&this.bindOld()}bindOld(){if(!this.old){this.bgOld=null;return}const e=this.device,r=n=>({buffer:n});this.paramsOld||(this.paramsOld=e.createBuffer({size:144,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),this.outOld=e.createBuffer({size:this.npx*16,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC})),this.bgOld=e.createBindGroup({layout:this.pRelight.getBindGroupLayout(0),entries:[{binding:0,resource:r(this.paramsOld)},{binding:1,resource:r(this.offs)},{binding:2,resource:r(this.trans)},{binding:3,resource:r(this.dirs)},{binding:4,resource:r(this.lights)},{binding:5,resource:r(this.widths)},{binding:6,resource:r(this.old.sky)},{binding:7,resource:r(this.old.pre)},{binding:8,resource:r(this.outOld)}]})}dropOld(){this.old&&this.old.own&&(this.old.sky.destroy(),this.old.pre.destroy()),this.old=null,this.bgOld=null}bytes(){let e=0;for(const r of Object.values(this.sets))for(const n of Object.values(r))e+=n.size;for(const r of[this.out,this.pre,this.sky])r&&(e+=r.size);return e}bindRelight(){const e=r=>({buffer:r});this.bg=this.device.createBindGroup({layout:this.pRelight.getBindGroupLayout(0),entries:[{binding:0,resource:e(this.params)},{binding:1,resource:e(this.offs)},{binding:2,resource:e(this.trans)},{binding:3,resource:e(this.dirs)},{binding:4,resource:e(this.lights)},{binding:5,resource:e(this.widths)},{binding:6,resource:e(this.sky)},{binding:7,resource:e(this.pre)},{binding:8,resource:e(this.out)}]})}setSky(e,r,n,s=!1){const i=this.prepareSky(_e(e,r,n)),o=this.device.createCommandEncoder();for(const l of this.prefilterSteps(i))l(o);this.device.queue.submit([o.finish()]),this.adoptSky(i,s)}prepareSky(e){const r=this.device;return{sky:T(r,e.data,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),pre:r.createBuffer({size:this.preW*this.preH*this.nl*16,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC}),skyW:e.W,skyH:e.H,Wl:e.Wl,Hl:e.Hl,rgba:e.rgba,ubs:[]}}prepareSkyMapped(e,r){const n=this.device,s=GPUBufferUsage.STORAGE,i=n.createBuffer({size:e*r*16,usage:s|GPUBufferUsage.COPY_DST,mappedAtCreation:!0}),o=n.createBuffer({size:this.preW*this.preH*this.nl*16,usage:s|GPUBufferUsage.COPY_SRC,mappedAtCreation:!0});return{sky:i,pre:o,skyW:e,skyH:r,ubs:[],skyMap:new Float32Array(i.getMappedRange()),preMap:new Float32Array(o.getMappedRange())}}finishSky(e){e.skyMap&&(e.sky.unmap(),e.pre.unmap(),e.skyMap=e.preMap=null)}discardSky(e){for(const r of[e.sky,e.pre,...e.ubs])r.destroy()}prefilterSteps(e,r=1/0){const n=this.device,s=[];for(let i=0;i<this.nl;i++){const o=this.lay.w0*2**i,l=o<=4.5*Math.PI/180,u=l?e.skyW:e.Wl,a=l?e.skyH:e.Hl,c=3.5*o>.5*Math.PI?Math.PI:3.5*o,d=Math.min(a,2*c/Math.PI*a+3)*Math.min(u,c/Math.PI*u+3),h=Math.floor(r/(d*this.preW)/16)*16,p=Math.min(this.preH,Math.max(16,Number.isFinite(h)?h:this.preH));for(let m=0;m<this.preH;m+=p){const k=new ArrayBuffer(48),P=new Uint32Array(k),x=new Float32Array(k);P.set([u,a,l?0:e.skyW*e.skyH,i*this.preW*this.preH,this.preW,this.preH,m,Math.min(p,this.preH-m)]),x[8]=o;const w=n.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});n.queue.writeBuffer(w,0,k),e.ubs.push(w);const B=n.createBindGroup({layout:this.pPre.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:w}},{binding:1,resource:{buffer:e.sky}},{binding:2,resource:{buffer:e.pre}}]});s.push((U,A)=>{const R=U.beginComputePass(A?{timestampWrites:A}:{});R.setPipeline(this.pPre),R.setBindGroup(0,B),R.dispatchWorkgroups(Math.ceil(this.preW/16),Math.ceil(p/16)),R.end()})}}return s}adoptSky(e,r=!1){this.finishSky(e);for(const n of e.ubs)n.destroy();this.dropOld(),this.sky?r?this.old={sky:this.sky,pre:this.pre,skyW:this.skyW,skyH:this.skyH,own:this.ownPre,liftAxis:this.liftAxis}:(this.sky.destroy(),this.ownPre&&this.pre.destroy()):this.pre&&this.ownPre&&this.pre.destroy(),Object.assign(this,{sky:e.sky,pre:e.pre,skyW:e.skyW,skyH:e.skyH,Wl:e.Wl,Hl:e.Hl,rgba:e.rgba,liftAxis:e.liftAxis||[1,0,0]}),this.ownPre=!0,this.bindRelight(),this.bindOld()}encodePrefilter(e,r){const n={sky:this.sky,pre:this.pre,skyW:this.skyW,skyH:this.skyH,Wl:this.Wl,Hl:this.Hl,ubs:[]};this.prefilterSteps(n).forEach((s,i)=>s(e,r?r(i):void 0))}setView(e,r,n,s=0,i=0){this.writeView(this.params,e,r,n,s,this.skyW,this.skyH,i,this.liftAxis)}setViewOld(e,r,n,s=0,i=0){this.old&&this.paramsOld&&this.writeView(this.paramsOld,e,r,n,s,this.old.skyW,this.old.skyH,i,this.old.liftAxis)}encodeOld(e){if(!this.bgOld)return;const r=e.beginComputePass({});r.setPipeline(this.pRelight),r.setBindGroup(0,this.bgOld),r.dispatchWorkgroups(Math.ceil(this.npx/64)),r.end()}writeView(e,r,n,s,i,o,l,u=0,a=[1,0,0]){const c=this.lay,d=new ArrayBuffer(144),h=new Uint32Array(d),p=new Float32Array(d);h.set([c.width,c.height,this.npx,s?1:0,o,l,this.preW,this.preH]);const m=wt(We(r,n),u,a),k=c.camera.basis_right_up_forward;for(let P=0;P<3;P++)p.set([...m[P],0],8+4*P);p.set([...k[0],c.camera.tan_half_fov],20),p.set([...k[1],c.width/c.height],24),p.set([...k[2],0],28),p.set([this.nl,c.width_codes,i,0],32),this.device.queue.writeBuffer(e,0,d)}encode(e,r){const n=e.beginComputePass(r?{timestampWrites:r}:{});n.setPipeline(this.pRelight),n.setBindGroup(0,this.bg),n.dispatchWorkgroups(Math.ceil(this.npx/64)),n.end()}}const Ee=1.5,kt=.45,b=t=>document.getElementById(t),ce=b("overlay"),_=t=>`${(t/1e6).toFixed(1)} MB`;let y,g,v,ue,j,$e,fe,O,I,X,de,he;const W={left:0,top:0,scale:1,k:2},Pt=.54,Bt=[[.3,2*Math.PI/23],[.2,2*Math.PI/37]],St=t=>Bt.reduce((e,[r,n])=>e+r*Math.sin(n*t),0),Mt=1,Ot=2;let pe=null;const f={rot:0,tilt:0,rot0:0,tilt0:0,bob:0,lift:0,age:0,stops:0,skyOn:!0,spin:!0,bgBlur:6.5,dirty:!0,showDirty:!0,backDirty:!0};function Q(t){ce.hidden=!1,ce.classList.add("err"),b("msg").textContent=t,b("barfill").parentElement.hidden=!0}async function ye(t,e){const r=await fetch(t);if(!r.ok)throw new Error(`Could not download ${t} (${r.status}).`);const n=r.body.pipeThrough(new TransformStream({transform(s,i){e(s.byteLength),i.enqueue(s)}}));return new Uint8Array(await new Response(n).arrayBuffer())}function Ie(t){if(Uint8Array.fromBase64)return Uint8Array.fromBase64(t);const e=atob(t),r=new Uint8Array(e.length);for(let n=0;n<e.length;n++)r[n]=e.charCodeAt(n);return r}async function At(t,e,r){let n;if(e.text){const s=new TextDecoder,i=await Promise.all(e.text.map(l=>ye(t+l,r).then(u=>Ie(s.decode(u)))));n=new Uint8Array(i.reduce((l,u)=>l+u.length,0));let o=0;for(const l of i)n.set(l,o),o+=l.length}else n=await ye(t+e.file,r);return n[0]===31&&n[1]===139&&(n=new Uint8Array(await new Response(new Blob([n]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer())),n}const H=[{key:"low",label:"Low",dir:"q3"},{key:"med",label:"Med",dir:"q8"},{key:"high",label:"High",dir:"q16"}];let ge=!1,He=null;const me=t=>document.querySelector(`.seg button[data-q="${t}"]`);function Fe(t){const e=Object.keys(t.lay.files).filter(n=>n!=="sky"||!ge);let r=0;for(const n of e)for(const s of t.lay.files[n].parts)r+=s.text?4*Math.ceil(s.gz/3):s.gz;return{names:e,total:r}}async function be(t,e){const r=`data/${t.dir}/`,n=t.lay,{names:s,total:i}=Fe(t);let o=0;const l=performance.now(),u=w=>{o+=w,e(o,i)},a=[];for(const w of s)for(const B of n.files[w].parts)a.push(At(r,B,u).then(U=>({n:w,p:B,b:U})));const c=await Promise.all(a),d=performance.now();let h=0;for(const w of performance.getEntriesByType("resource"))w.name.includes(`/${r}`)&&(h+=w.transferSize||0);const p={};let m=0;for(const w of s){const B=n.files[w],U=c.filter(A=>A.n===w).sort((A,R)=>B.parts.indexOf(A.p)-B.parts.indexOf(R.p));p[w]=dt(B,U.map(A=>A.p.planes?ft(A.b,B.item):A.b)),m+=B.bytes}const k=performance.now(),P=s.some(w=>n.files[w].parts.some(B=>B.text)),x=p.count.reduce((w,B)=>w+(B===0?1:0),0);return t.stats={q:`${t.label}: ${n.cone_slots} cones a pixel`,dl:`${_(i)}${P?" of base64 text":""}${h>0?`, ${_(h)} on the wire`:""}, ${((d-l)/1e3).toFixed(1)} s`,unpack:`${_(m)} (${((k-d)/1e3).toFixed(2)} s after the download)`,cones:`${(n.cones/1e6).toFixed(2)} M (${(n.cones/n.pixels).toFixed(1)} a pixel)`,caption:`${n.width} x ${n.height}, up to ${n.cone_slots} cones a pixel from ${n.cone_paths} paths; ${(100*x/n.pixels).toFixed(0)} % of the pixels see only sky and keep none.`},p}let M=null;const F={},D=t=>t.replace(/_1k$/,"").replace(/_/g," "),De="test_light_small",Ut=4,Ct=32e6,J=()=>new Promise(t=>requestAnimationFrame(()=>t()));async function Gt(t,e){const r=new TextDecoder,n=await Promise.all(t.map(o=>ye(`data/skies/${o}`,()=>{}).then(l=>e?Ie(r.decode(l)):l))),s=new Uint8Array(n.reduce((o,l)=>o+l.length,0));let i=0;for(const o of n)s.set(o,i),i+=o.length;return s}const qe=async t=>t[0]===31&&t[1]===139?new Uint8Array(await new Response(new Blob([t]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()):t;function we(t){if(!F[t.name]){const e=n=>Gt(n.text||n.files,!!n.text),r=Promise.all([e(t),t.levels?e(t.levels):null]).then(([n,s])=>({sky:n,levels:s}));r.catch(()=>{F[t.name]===r&&delete F[t.name]}),F[t.name]=r}return F[t.name]}async function Rt(){for(const t of M.skies)try{await we(t)}catch{}}function _t(t){const e=t.levels;return!!(e&&e.width===g.preW&&e.height===g.preH&&e.count===g.nl&&Math.abs(e.w0-v.w0)<1e-9)}async function ze(t,e,r){let n=0;for(;n<t;){const s=performance.now();do{const i=Math.min(t,n+8);e(n,i),n=i}while(n<t&&(!r||performance.now()-s<Ut));n<t&&await J()}}async function Ye(t,e=!0){const r=await we(t),n=!!r.levels&&_t(t)&&t.width<=2048,[s,i]=await Promise.all([qe(r.sky),n?qe(r.levels):null]),o=t.width,l=t.height;if(!i){const d=yt(s,o,l,M.bits);return{...await xe(d,o,l,e),peak:Le(d,o,l),W:o,H:l}}const u=g.prepareSkyMapped(o,l),a={l:-1,i:0},c=g.preH*g.nl;try{await ze(l,(d,h)=>ae(s,o,l,M.bits,u.skyMap,d,h,a),e),await ze(c,(d,h)=>ae(i,g.preW,c,t.levels.bits,u.preMap,d,h),e)}catch(d){throw g.finishSky(u),g.discardSky(u),d}return g.finishSky(u),{p:u,peak:a,W:o,H:l}}async function xe(t,e,r,n){const s=_e(t,e,r),i=g.prepareSky(s);for(const o of g.prefilterSteps(i,n?Ct:1/0)){const l=y.createCommandEncoder();o(l),y.queue.submit([l.finish()]),n&&await J()}return{p:i}}function Wt(t,e){return t&&t===M.skies[0]?{turn:v.rot,tilt:v.tilt||0}:t&&t.name===De?{turn:vt(e.peak,e.W,e.H,v.camera.basis_right_up_forward[2]),tilt:0}:{turn:xt(e.peak,e.W,e.H,v.sun_az),tilt:0}}function Lt(t){const e=M.skies.find(r=>r.name===t);e&&(Ke(t),Ne({entry:e,ready:()=>Ye(e)}))}let ve=!1,E=null,Ve=null;async function Ne(t){if(E=t,!ve){ve=!0;try{for(;E;){const e=E;E=null;let r;try{r=await e.ready()}catch(n){b("skyname").textContent=`Could not load it: ${n.message}`;continue}for(await y.queue.onSubmittedWorkDone(),await J();S&&!E;)await J();if(E){g.discardSky(r.p);continue}ke(r,e)}}finally{ve=!1}}}function ke(t,e){S&&Je();const r=!!(g.sky&&Z&&I),n=f.rot,s=f.tilt,i=f.lift,o=c=>c?M.skies.indexOf(c):M?M.skies.length:0,l=Math.sign(o(e.entry)-o(Ve))||1;t.p.liftAxis=t.peak?bt(le(t.peak,t.W,t.H)):[1,0,0],g.adoptSky(t.p,r),I&&(de=Ze());for(const c of Object.values(L))c.useSkyOf(g);const{turn:u,tilt:a}=e.turnOf?e.turnOf(t):Wt(e.entry,t);f.rot=f.rot0=u,f.tilt=f.tilt0=a,f.bob=0,f.lift=0,r&&g.old&&(Ft(n-f.rot,s-f.tilt,i-f.lift),re.push({dir:l,t:0})),Ve=e.entry||null,e.entry?je(e.entry):je(null,e.fileName),b("skyname").textContent=`${e.entry?D(e.entry.name):e.fileName} (${g.skyW} x ${g.skyH})`,b("mem").textContent=_(g.bytes()),f.dirty=!0}function Ke(t){for(const e of b("skies").children)e.setAttribute("aria-checked",String(e.dataset.sky===t))}function je(t,e){const r=s=>{const i=document.createElement("span");return i.className="k",i.textContent=s,i},n=[];if(t&&t.authors){const s=Object.entries(t.authors);s.every(([,i])=>i==="All")?n.push(r("by"),` ${s.map(([i])=>i).join(" and ")}`):s.forEach(([i,o],l)=>n.push(...l?[" "]:[],r(o.toLowerCase()),` ${i}`))}else n.push(t?t.title||D(t.name):e||"");b("hdricredit").replaceChildren(...n),b("billsky").textContent=t?t.title||D(t.name):e||"",b("billfrom").hidden=!(t&&t.source),b("billsrc").textContent=t&&t.source?t.source:""}function Xe(t){for(const e of["q","dl","unpack","cones"])b(e==="q"?"qinfo":e).textContent=t.stats[e];b("caption").textContent=t.stats.caption,b("mem").textContent=_(g.bytes())}async function Tt(t){const e=H.find(r=>r.key===t);if(!(!e||!e.lay)){if(He=t,!g.sets[t]){if(e.loading)return;e.loading=!0;const r=me(t);r.setAttribute("aria-busy","true");try{const n=await be(e,(s,i)=>{r.textContent=`${Math.floor(100*s/i)} %`});g.addCones(t,n)}catch(n){r.title=`Could not load it: ${n.message}`;return}finally{r.textContent=e.label,r.removeAttribute("aria-busy"),e.loading=!1}if(He!==t)return}g.useCones(t);for(const r of H)me(r.key).setAttribute("aria-checked",String(r.key===t));Xe(e),f.dirty=!0}}const Et=900,Pe={color:{srcFactor:"constant",dstFactor:"one-minus-constant",operation:"add"},alpha:{srcFactor:"constant",dstFactor:"one-minus-constant",operation:"add"}};let S=null,Z,Be,ee,te=null,ne=null,q=null;const Qe=Math.PI,z=.7,$t=.08,Se=1/(1/z+1/$t),It=Qe/(z-Se),Me=t=>It*(z*(1-Math.exp(-t/z))-Se*(1-Math.exp(-t/Se))),re=[],Ht=t=>t*t*t*(t*(6*t-15)+10);function Ft(t,e,r){S={u:0,dRot:t,dTilt:e,dLift:r},te=y.createBindGroup({layout:Z.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:j}},{binding:1,resource:{buffer:g.outOld}}]}),ne=y.createBindGroup({layout:Be.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:g.paramsOld}},{binding:6,resource:{buffer:g.old.sky}},{binding:7,resource:{buffer:g.old.pre}},{binding:9,resource:{buffer:X}}]}),q=C&&Y&&C.bgOld&&ee?y.createBindGroup({layout:ee.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:ie}},{binding:1,resource:{buffer:C.outOld}}]}):null}function Je(){S=null,te=ne=q=null;for(const t of Object.values(L))t.dropOld();g.dropOld(),f.dirty=!0}async function Dt(t){const e=t.name,r=e.toLowerCase();if(!r.endsWith(".exr")&&!r.endsWith(".hdr")){b("skyname").textContent="Drop an .exr or .hdr file.";return}b("skyname").textContent=`Reading ${e}`;try{const n="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/",s=await import("three"),i=await import(n+(r.endsWith(".exr")?"EXRLoader.js":"RGBELoader.js")),o=r.endsWith(".exr")?new i.EXRLoader:new i.RGBELoader;o.setDataType(s.FloatType);const l=o.parse(await t.arrayBuffer()),u=l.width,a=l.height,c=l.data.length/(u*a),d=new Float32Array(u*a*4),h=r.endsWith(".exr");for(let m=0;m<a;m++){const k=h?a-1-m:m;for(let P=0;P<u;P++){const x=(k*u+P)*c,w=(m*u+P)*4;d[w]=l.data[x],d[w+1]=l.data[x+(c>1?1:0)],d[w+2]=l.data[x+(c>2?2:0)],d[w+3]=1}}const p=Le(d,u,a);Ke(null),Ne({fileName:e.replace(/\.(exr|hdr)$/i,""),ready:async()=>({...await xe(d,u,a,!0),peak:p,W:u,H:a})})}catch(n){b("skyname").textContent=`Could not read ${e}: ${n.message}`}}function qt(t){const e=y.createShaderModule({code:lt});ue=y.createRenderPipeline({layout:"auto",vertex:{module:e,entryPoint:"vs"},fragment:{module:e,entryPoint:"fs",targets:[{format:t}]},primitive:{topology:"triangle-list"}}),Z=y.createRenderPipeline({layout:"auto",vertex:{module:e,entryPoint:"vs"},fragment:{module:e,entryPoint:"fs",targets:[{format:t,blend:Pe}]},primitive:{topology:"triangle-list"}}),j=y.createBuffer({size:32,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),$e=y.createBindGroup({layout:ue.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:j}},{binding:1,resource:{buffer:g.out}}]})}function Ze(){return y.createBindGroup({layout:I.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:g.params}},{binding:6,resource:{buffer:g.sky}},{binding:7,resource:{buffer:g.pre}},{binding:9,resource:{buffer:X}}]})}function zt(t){he=b("backdrop").getContext("webgpu"),he.configure({device:y,format:t,alphaMode:"opaque"});const e=y.createShaderModule({code:ut});I=y.createRenderPipeline({layout:"auto",vertex:{module:e,entryPoint:"vs"},fragment:{module:e,entryPoint:"fs",targets:[{format:t}]},primitive:{topology:"triangle-list"}}),Be=y.createRenderPipeline({layout:"auto",vertex:{module:e,entryPoint:"vs"},fragment:{module:e,entryPoint:"fs",targets:[{format:t,blend:Pe}]},primitive:{topology:"triangle-list"}}),X=y.createBuffer({size:32,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),de=Ze()}const L={};let C=null,G=null,se,Oe,ie,et,Y=null,tt=null;const nt=.46,Yt=.55,Vt=.6;let Ae=296/1600;const V={left:0,top:0,w:0,h:0};let rt=()=>{};function Nt(){if(!G)return;const t=b("logo"),e=window.devicePixelRatio||1;t.style.width=`${V.w/e}px`,t.style.height=`${V.h/e}px`,t.style.left=`${V.left/e}px`,t.style.top=`${V.top/e}px`}async function Kt(t){if(tt=t,t==="off"){Y=null,b("logo").hidden=!0;return}try{if(!L[t]){const n={key:t,label:t,dir:`logo/${t}`},s=await fetch(`data/logo/${t}/layout.json`);if(!s.ok)throw new Error(`no ${t} logo here (${s.status})`);n.lay=await s.json();const i=await be(n,()=>{});L[t]=new Te(y,n.lay,i,t),L[t].useSkyOf(g)}if(tt!==t)return;C=L[t],G=C.lay;const e=b("logo");(e.width!==G.width||e.height!==G.height)&&(e.width=G.width,e.height=G.height);const r=navigator.gpu.getPreferredCanvasFormat();if(!se){se=e.getContext("webgpu"),se.configure({device:y,format:r,alphaMode:"premultiplied"});const n=y.createShaderModule({code:ct});Oe=y.createRenderPipeline({layout:"auto",vertex:{module:n,entryPoint:"vs"},fragment:{module:n,entryPoint:"fs",targets:[{format:r}]},primitive:{topology:"triangle-list"}}),ee=y.createRenderPipeline({layout:"auto",vertex:{module:n,entryPoint:"vs"},fragment:{module:n,entryPoint:"fs",targets:[{format:r,blend:Pe}]},primitive:{topology:"triangle-list"}}),ie=y.createBuffer({size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST})}et=y.createBindGroup({layout:Oe.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:ie}},{binding:1,resource:{buffer:C.out}}]}),Ae=G.height/G.width,rt(),Y=t,e.hidden=!1,b("mem").textContent=_(g.bytes()+Object.values(L).reduce((n,s)=>n+s.bytes()-s.sky.size-s.pre.size,0)),f.dirty=!0}catch(e){console.warn(`The logo could not load: ${e.message}`)}}function jt(){if(!y.features.has("timestamp-query"))return null;const t=y.createQuerySet({type:"timestamp",count:2}),e=y.createBuffer({size:16,usage:GPUBufferUsage.QUERY_RESOLVE|GPUBufferUsage.COPY_SRC}),r=y.createBuffer({size:16,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});return{q:t,resolve:e,read:r,busy:!1,ms:null}}const $=[];function st(t){const e=pe===null?0:Math.min((t-pe)/1e3,.1);pe=t,f.age+=Math.min(e,1/30);const r=Math.min(1,Math.max(0,(f.age-Mt)/Ot)),n=e*Ht(r);f.spin&&n>0&&(f.rot+=Pt*n,f.bob+=n,f.lift=St(f.bob),f.dirty=!0);const s=Math.min(e,1/30);for(let l=re.length-1;l>=0;l--){const u=re[l],a=u.t+s;f.rot+=u.dir*(Me(a)-Me(u.t)),u.t=a,a>12*z&&(f.rot+=u.dir*(Qe-Me(a)),re.splice(l,1)),f.dirty=!0}let i=1;S&&(S.u=Math.min(1,S.u+s*1e3/Et),S.u>=1?Je():(i=S.u*S.u*(3-2*S.u),f.dirty=!0));const o=[1-i,1-i,1-i,1-i];if(f.dirty||f.showDirty||f.backDirty){const l=y.createCommandEncoder();let u=!1;if(f.dirty){g.setView(f.rot,f.tilt,f.skyOn,f.bgBlur,f.lift);const p=O&&!O.busy?{querySet:O.q,beginningOfPassWriteIndex:0,endOfPassWriteIndex:1}:void 0;g.encode(l,p),p&&(l.resolveQuerySet(O.q,0,2,O.resolve,0),l.copyBufferToBuffer(O.resolve,0,O.read,0,16),u=!0),$.push(t),S&&(g.setViewOld(f.rot+S.dRot,f.tilt+S.dTilt,f.skyOn,f.bgBlur,f.lift+S.dLift),g.encodeOld(l)),C&&Y&&(C.setView(f.rot,f.tilt,!1,0,f.lift),C.encode(l),S&&q&&(C.setViewOld(f.rot+S.dRot,f.tilt+S.dTilt,!1,0,f.lift+S.dLift),C.encodeOld(l)))}const a=new ArrayBuffer(32);new Uint32Array(a,0,2).set([v.width,v.height]),new Float32Array(a,8,4).set([v.exposure*2**f.stops,Ee,W.left,W.top]),y.queue.writeBuffer(j,0,a);const c=l.beginRenderPass({colorAttachments:[{view:fe.getCurrentTexture().createView(),loadOp:"clear",storeOp:"store",clearValue:{r:0,g:0,b:0,a:1}}]});c.setPipeline(ue),c.setBindGroup(0,$e),c.draw(3),S&&te&&(c.setPipeline(Z),c.setBindGroup(0,te),c.setBlendConstant(o),c.draw(3)),c.end();const d=v.exposure*2**f.stops;y.queue.writeBuffer(X,0,new Float32Array([W.left,W.top,W.scale,W.k,d,f.bgBlur,f.skyOn?1:0,Ee]));const h=l.beginRenderPass({colorAttachments:[{view:he.getCurrentTexture().createView(),loadOp:"clear",storeOp:"store",clearValue:{r:0,g:0,b:0,a:1}}]});if(h.setPipeline(I),h.setBindGroup(0,de),h.draw(3),S&&ne&&(h.setPipeline(Be),h.setBindGroup(0,ne),h.setBlendConstant(o),h.draw(3)),h.end(),C&&Y){const p=new ArrayBuffer(16);new Uint32Array(p,0,2).set([G.width,G.height]),new Float32Array(p,8,1)[0]=d*kt,y.queue.writeBuffer(ie,0,p);const m=l.beginRenderPass({colorAttachments:[{view:se.getCurrentTexture().createView(),loadOp:"clear",storeOp:"store",clearValue:{r:0,g:0,b:0,a:0}}]});m.setPipeline(Oe),m.setBindGroup(0,et),m.draw(3),S&&q&&(m.setPipeline(ee),m.setBindGroup(0,q),m.setBlendConstant(o),m.draw(3)),m.end()}y.queue.submit([l.finish()]),u&&(O.busy=!0,O.read.mapAsync(GPUMapMode.READ).then(()=>{const p=new BigUint64Array(O.read.getMappedRange()),m=Number(p[1]-p[0])/1e6;O.read.unmap(),O.busy=!1,m>0&&m<1e4&&(O.ms=O.ms===null?m:.8*O.ms+.2*m,b("gpums").textContent=`${O.ms.toFixed(2)} ms`)}).catch(()=>{O.busy=!1})),f.dirty=f.showDirty=f.backDirty=!1}for(;$.length&&t-$[0]>1e3;)$.shift();b("fps").textContent=$.length>1?`${$.length}`:"-",requestAnimationFrame(st)}async function Xt(){const t=b("benchbtn");t.disabled=!0,b("bench").textContent="running";try{g.setView(f.rot,f.tilt,f.skyOn,f.bgBlur,f.lift);let e=y.createCommandEncoder();g.encode(e),y.queue.submit([e.finish()]),await y.queue.onSubmittedWorkDone();const r=60,n=performance.now();e=y.createCommandEncoder();for(let i=0;i<r;i++)g.encode(e);y.queue.submit([e.finish()]),await y.queue.onSubmittedWorkDone();const s=(performance.now()-n)/r;b("bench").textContent=`${s.toFixed(2)} ms each (${Math.round(1e3/s)} a second)`}catch(e){b("bench").textContent=`failed: ${e.message}`}t.disabled=!1}let it=0,Ue=!1;function N(){document.body.classList.remove("idle"),clearTimeout(it),it=setTimeout(()=>{!Ue&&b("info").hidden&&document.body.classList.add("idle")},2500)}function Qt(){const t=b("view");let e=null;const r=s=>s.target instanceof Element&&s.target.closest(".ui");document.addEventListener("pointerdown",s=>{if(N(),!(r(s)||s.button!==0)){e={id:s.pointerId,x:s.clientX,y:s.clientY,rot:f.rot,tilt:f.tilt},Ue=!0;try{b("stage").setPointerCapture(s.pointerId)}catch{}}}),document.addEventListener("pointermove",s=>{if(N(),!e||s.pointerId!==e.id)return;const i=.006*(v.width/t.clientWidth);f.rot=e.rot+(s.clientX-e.x)*i,f.tilt=e.tilt+(s.clientY-e.y)*i,f.dirty=!0});const n=s=>{e&&s.pointerId===e.id&&(e=null,Ue=!1,N())};document.addEventListener("pointerup",n),document.addEventListener("pointercancel",n),document.addEventListener("keydown",N),b("exp").addEventListener("input",s=>{f.stops=parseFloat(s.target.value),f.showDirty=!0}),b("benchbtn").addEventListener("click",Xt),document.addEventListener("dragover",s=>{s.preventDefault(),document.body.classList.add("dropping")}),document.addEventListener("dragleave",s=>{s.relatedTarget||document.body.classList.remove("dropping")}),document.addEventListener("drop",s=>{s.preventDefault(),document.body.classList.remove("dropping");const i=s.dataTransfer&&s.dataTransfer.files[0];i&&Dt(i)})}async function Jt(){if(!navigator.gpu)return Q("This page needs WebGPU, which this browser does not offer. Open it in a current Chrome, Edge or Safari.");const t=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});if(!t)return Q("WebGPU is there, but no graphics adapter was found for it.");const e=t.limits;y=await t.requestDevice({requiredFeatures:t.features.has("timestamp-query")?["timestamp-query"]:[],requiredLimits:{maxStorageBufferBindingSize:e.maxStorageBufferBindingSize,maxBufferSize:e.maxBufferSize,maxStorageBuffersPerShaderStage:e.maxStorageBuffersPerShaderStage}}),y.lost.then(a=>Q(`The GPU device was lost: ${a.message||a.reason}`));const r=t.info||{};b("gpu").textContent=r.description||[r.vendor,r.architecture].filter(Boolean).join(" ")||"unknown",await Promise.all(H.map(async a=>{try{const c=await fetch(`data/${a.dir}/layout.json`);c.ok&&(a.lay=await c.json())}catch{}}));const n=H.find(a=>a.lay);if(!n)throw new Error("no package was found next to the page.");v=n.lay;try{const a=await fetch("data/skies/skies.json");a.ok&&(M=await a.json())}catch{}M&&!M.skies.length&&(M=null),ge=!!M;const s=M?M.skies.find(a=>a.name===De)||M.skies[0]:null;s&&we(s).catch(()=>{});const i=await be(n,(a,c)=>{b("msg").textContent=`Loading ${_(a)} of ${_(c)}`,b("barfill").style.width=`${Math.min(100,100*a/c).toFixed(1)}%`});M&&b("skies").replaceChildren(...M.skies.map(a=>{const c=document.createElement("button");return c.type="button",c.setAttribute("role","radio"),c.setAttribute("aria-checked",String(a===s)),c.setAttribute("aria-label",a.title||D(a.name)),c.title=a.title||D(a.name),c.dataset.sky=a.name,a.swatch&&(c.style.background=`linear-gradient(${a.swatch[0]}, ${a.swatch[1]})`),c.addEventListener("click",()=>Lt(a.name)),c})),ge=!0,b("msg").textContent="Preparing the sky",g=new Te(y,v,i,n.key);for(const a of H){const c=me(a.key);c.disabled=!a.lay,c.setAttribute("aria-checked",String(a===n)),a.lay&&(c.title=`${a.lay.cone_slots} cones a pixel${g.sets[a.key]?"":`, ${_(Fe(a).total)} to load`}`),c.addEventListener("click",()=>Tt(a.key))}b("credits").replaceChildren(...[...v.credits||[],`Sky: ${v.sky.name}`].map(a=>{const c=document.createElement("span");return c.textContent=a,c}));const o=b("view");o.width=v.width,o.height=v.height;const l=()=>{const a=window.devicePixelRatio||1,c=window.innerWidth,d=window.innerHeight,h=v.width,p=v.height,m=c*a,k=d*a,P=Math.min(1,m/h,k/(p+2/Vt*nt*h*Ae)),x=Math.floor(h*P),w=Math.round(x*p/h),B=Math.round((m-x)/2),U=Math.round((k-w)/2),A=Math.floor(nt*x),R=Math.round(A*Ae);Object.assign(V,{left:Math.round((m-A)/2),top:Math.round(Yt*U-R/2),w:A,h:R}),o.style.width=`${x/a}px`,o.style.height=`${w/a}px`,o.style.left=`${B/a}px`,o.style.top=`${U/a}px`;const K=b("backdrop"),oe=Math.max(1,Math.ceil(c*a)),Ce=Math.max(1,Math.ceil(d*a));(K.width!==oe||K.height!==Ce)&&(K.width=oe,K.height=Ce),Object.assign(W,{left:B,top:U,scale:x/v.width,k:c*a/oe}),f.backDirty=!0,Nt()};rt=l,l(),window.addEventListener("resize",l),fe=o.getContext("webgpu");const u=navigator.gpu.getPreferredCanvasFormat();if(fe.configure({device:y,format:u,alphaMode:"opaque"}),M)ke(await Ye(s,!1),{entry:s}),await y.queue.onSubmittedWorkDone();else{const a=v.sky.width,c=v.sky.height;ke(await xe(pt(i.sky,a*c),a,c,!1),{fileName:v.sky.name.replace(/\.(exr|hdr)$/i,""),turnOf:()=>({turn:v.rot,tilt:v.tilt||0})})}qt(u),zt(u),Xe(n),O=jt(),O||(b("gpums").textContent="not offered (see Benchmark)"),Qt(),ce.hidden=!0,b("benchbtn").disabled=!1,N(),requestAnimationFrame(st),requestAnimationFrame(()=>document.body.classList.add("ready")),Kt("rough").then(()=>{M&&Rt()})}Jt().catch(t=>Q(`Something went wrong: ${t.message}`));
+</script>
+</body>
+</html>
